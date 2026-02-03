@@ -19,6 +19,7 @@ Base=declarative_base()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
+
 #DB models
 #row in a table
 class User(Base):
@@ -64,6 +65,11 @@ def get_current_user(token:str = Depends(oauth2_scheme), db:Session=Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="Invalid credentials")
     return user
+
+def get_admin_user(current_user: User = Depends(get_current_user)):
+    if current_user.role != "Admin": #type: ignore
+        raise HTTPException(status_code=403, detail="Only Admin can do this!")
+    return current_user
 
 #------ENDPOINTS----
 @app.get("/")
