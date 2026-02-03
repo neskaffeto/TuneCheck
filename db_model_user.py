@@ -64,7 +64,6 @@ def get_current_user(token:str = Depends(oauth2_scheme), db:Session=Depends(get_
     if not user:
         raise HTTPException(status_code=404, detail="Invalid credentials")
     return user
-get_db()
 
 #------ENDPOINTS----
 @app.get("/")
@@ -105,15 +104,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 #update user
 @app.put("/user/{user_id}", response_model=UserResponse)
 def update_user(user_id:int, user_update:UserCreate, db:Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if current_user.id != user_id and str(current_user.role) != "Admin":
+    if current_user.id != user_id and current_user.role != "Admin": #type: ignore
         raise HTTPException(status_code=403, detail="Not authorized to update this user")
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User doesn't exist")
     if user_update.username:
-        db_user.username = user_update.username
+        db_user.username = user_update.username #type: ignore
     if user_update.password:
-        db_user.password_hash = hash_password(user_update.password)
+        db_user.password_hash = hash_password(user_update.password) #type: ignore
     
     db.commit()
     db.refresh(db_user)
@@ -123,7 +122,7 @@ def update_user(user_id:int, user_update:UserCreate, db:Session = Depends(get_db
 #delete user
 @app.delete("/user/{user_id}")
 def delete_user(user_id:int, db:Session = Depends(get_db), current_user : User = Depends(get_current_user)):
-    if current_user.id != user_id and str(current_user.role) != "Admin":
+    if current_user.id != user_id and current_user.role != "Admin": #type: ignore
         raise HTTPException(status_code=403, detail="Not authorized to update this user")
     
     db_user = db.query(User).filter(User.id == user_id).first()
