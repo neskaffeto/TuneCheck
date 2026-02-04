@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Date, Table, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
@@ -22,6 +22,11 @@ Base=declarative_base()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
+playlist_songs = Table(
+    'playlist_songs', Base.metadata,
+    Column('playlist_id', Integer, ForeignKey('playlists.id')),
+    Column('song_id', Integer, ForeignKey('songs.id'))
+)
 
 #DB models
 #row in a table
@@ -33,6 +38,8 @@ class User(Base):
     username=Column(String(100), nullable=False, unique=True)
     password_hash=Column(String(100))
     role=Column(String(100), default="User")
+
+    playlists=relationship("Playlist", back_populates="owner")
 
 #SONG
 class Song(Base):
@@ -47,7 +54,21 @@ class Song(Base):
     date_of_publication = Column(Date)
     
     reviews = relationship("Review", back_populates = "song")
+    playlists = relationship("Playlist", secondary=playlist_songs, back_populates="songs")
 
+#PLAYLIST
+class Playlist(Base):
+    __tablename__ = "playlists"
+
+    id=Column(Integer,primary_key=True,index=True)
+    name=Column(String(100), nullable=False)
+    user_id=Column(Integer, ForeignKey("users.id"))
+
+    #connect to owner
+    owner= relationship("User", back_populates="playlists")
+    #connect to songs; going through the table
+    songs = relationship("Song", secondary=playlist_songs, back_populates="playlists")
+    
 #REVIEW
 class Review(Base):
     __tablename__ = "reviews"
@@ -64,12 +85,23 @@ Base.metadata.create_all(bind = engine)
 
 #Pydantic models
 #models of what we send and what we receive
+
+#~~~~~User~~~~~~~
 class UserBase(BaseModel):
     username:str
 
 class UserCreate(UserBase):
     password:str
     role: str = "User"
+
+class UserResponse(UserBase):
+    #safety net
+    id:int
+    role:str
+    class Config:
+        from_attributes = True
+
+#~~~~~Song~~~~~~~
 
 class SongCreate(BaseModel):
     title:str
@@ -79,13 +111,6 @@ class SongCreate(BaseModel):
     length:int
     date_of_publication: datetime.date
 
-class UserResponse(UserBase):
-    #safety net
-    id:int
-    role:str
-    class Config:
-        from_attributes = True
-
 class SongResponse(BaseModel):
     #safety net
     id:int
@@ -94,6 +119,20 @@ class SongResponse(BaseModel):
     album:str
     class Config:
         from_attributes = True
+
+#~~~~~Playlist~~~~~~~
+
+class PlaylistCreate(BaseModel):
+    name:str
+
+class PlaylistResponse(BaseModel):
+    id:int
+    name:str
+    user_id:int
+    songs:List[SongResponse] =[]
+    class Config:
+        from_attributes = True
+
 
 def get_db():
     db=SessionLocal()
@@ -118,7 +157,7 @@ def get_admin_user(current_user: User = Depends(get_current_user)):
 
 #------ENDPOINTS----
 
-#User Endpoints
+#User Endpoints~~~~~~~~~~~~
 @app.get("/")
 def root():
     return {"message":"TuneCheck Web App"}
@@ -193,7 +232,9 @@ def read_users_me(current_user: User = Depends(get_current_user)):
 def get_all_users(db:Session=Depends(get_db)):
     return db.query(User).all()
 
-#Song Endpoints
+#Song Endpoints~~~~~~~~~~~
+
+
 #get song from DB
 @app.get("/songs/{song_id}") #check if song is in the DB
 def get_song(song_id:int, db:Session=Depends(get_db)):
@@ -256,3 +297,82 @@ def delete_song(song_id:int, db:Session = Depends(get_db), current_user : User =
     db.delete(db_song)
     db.commit()
     return {"message":"Song deleted"}
+
+#Playlist Endpoints~~~~~~~~
+
+@app.get("/playlists/{playlist_id}",response_model = PlaylistResponse) #check if playlist is in the DB
+def get_playlist(playlist_id:int, db:Session=Depends(get_db)):
+    playlist = db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return playlist
+
+@app.get("/playlists/me",response_model = List[PlaylistResponse]) #get all playlists
+def get_my_playlists(db:Session=Depends(get_db), current_user: User=Depends(get_current_user)):
+    return current_user.playlists
+
+@app.post("/playlists", response_model = PlaylistResponse) #creating playlist and add it to the DB
+def create_playlist(playlist:PlaylistCreate, db:Session=Depends(get_db), current_user: User=Depends(get_current_user)):
+    #checks if the user already has a playlist with the same name
+    exist_pl =  db.query(Playlist).filter(Playlist.name == playlist.name, Playlist.user_id == current_user.id).first()
+    if exist_pl:
+        raise HTTPException(status_code=400, detail="PLaylist with this name already exists in your library")
+    #create new playlist
+    new_playlist =  Playlist(name=playlist.name, user_id=current_user.id)
+    db.add(new_playlist)
+    db.commit()
+    db.refresh(new_playlist)
+    return new_playlist
+
+@app.post("/playlists/{playlist_id}/add/{song_id}") #add song to a playlist
+def add_song_to_pl(playlist_id:int, song_id:int,db:Session=Depends(get_db),current_user: User=Depends(get_current_user)):
+    playlist =  db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="PLaylist doesn't exist")
+    
+    if playlist.user_id != current_user.id: #type: ignore
+        raise HTTPException(status_code=403, detail="Not your playlist to add song to")
+    
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Song you want to add doesn't exist")
+    
+    playlist.songs.append(song)
+    db.commit()
+
+    return {"message": f"Song '{song.title}' added to playlist '{playlist.name}'"}
+
+#update playlist
+@app.put("/playlists/{playlist_id}", response_model=PlaylistResponse)
+def update_playlist(playlist_id:int, playlist_update:PlaylistCreate, db:Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    playlist =  db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    
+    if not playlist:
+        raise HTTPException(status_code=404, detail="PLaylist doesn't exist")
+    
+    if playlist.user_id != current_user.id: #type: ignore
+        raise HTTPException(status_code=403, detail="Not your playlist to add song to")
+    
+    exist_pl =  db.query(Playlist).filter(Playlist.name == playlist_update.name, Playlist.user_id == current_user.id).first()
+    if exist_pl:
+        raise HTTPException(status_code=400, detail="PLaylist with this name already exists")
+    
+    playlist.name = playlist_update.name #type: ignore
+    db.commit()
+    db.refresh(playlist)
+    return playlist
+
+
+#delete playlist
+@app.delete("/playlists/{playlist_id}")
+def delete_playlist(playlist_id:int, db:Session = Depends(get_db), current_user : User = Depends(get_current_user)):
+    playlist =  db.query(Playlist).filter(Playlist.id == playlist_id).first()
+    if not playlist:
+        raise HTTPException(status_code=404, detail="PLaylist doesn't exist")
+    
+    if playlist.user_id != current_user.id: #type: ignore
+        raise HTTPException(status_code=403, detail="Not authorized to delete this playlist")
+    
+    db.delete(playlist)
+    db.commit()
+    return {"message":"Playlist deleted"}
