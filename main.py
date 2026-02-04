@@ -243,7 +243,7 @@ def get_song(song_id:int, db:Session=Depends(get_db)):
         raise HTTPException(status_code=404, detail="Song not found")
     return song
 
-@app.post("/songs") #add song to the DB
+@app.post("/songs", response_model=SongResponse) #add song to the DB
 def add_song(song:SongCreate, db:Session=Depends(get_db), current_user: User=Depends(get_current_user)):
     if current_user.role != "Admin": #type: ignore
         raise HTTPException(status_code=403, detail="You don't have rights to add new songs" )
@@ -265,7 +265,7 @@ def add_song(song:SongCreate, db:Session=Depends(get_db), current_user: User=Dep
     return new_song
 
 #update song
-@app.put("/songs/{song_id}")
+@app.put("/songs/{song_id}", response_model=SongResponse)
 def update_song(song_id:int, song_update:SongCreate, db:Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if current_user.role != "Admin": #type: ignore
         raise HTTPException(status_code=403, detail="Not authorized to update this song")
@@ -336,6 +336,9 @@ def add_song_to_pl(playlist_id:int, song_id:int,db:Session=Depends(get_db),curre
     song = db.query(Song).filter(Song.id == song_id).first()
     if not song:
         raise HTTPException(status_code=404, detail="Song you want to add doesn't exist")
+    
+    if song in playlist.songs:
+        raise HTTPException(status_code=400, detail="Song is already in playlist")
     
     playlist.songs.append(song)
     db.commit()
