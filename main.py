@@ -223,3 +223,36 @@ def add_song(song:SongCreate, db:Session=Depends(get_db), current_user: User=Dep
     db.refresh(new_song)
     return new_song
 
+#update song
+@app.put("/songs/{song_id}")
+def update_song(song_id:int, song_update:SongCreate, db:Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.role != "Admin": #type: ignore
+        raise HTTPException(status_code=403, detail="Not authorized to update this song")
+    db_song = db.query(Song).filter(Song.id == song_id).first()
+    if not db_song:
+        raise HTTPException(status_code=404, detail="Song doesn't exist")
+    
+    db_song.title = song_update.title #type: ignore
+    db_song.album = song_update.album #type: ignore
+    db_song.genre = song_update.genre #type: ignore
+    db_song.singer = song_update.singer #type: ignore
+    db_song.length = song_update.length #type: ignore
+    db_song.date_of_publication = song_update.date_of_publication #type: ignore
+
+    db.commit()
+    db.refresh(db_song)
+    return db_song
+
+
+#delete song
+@app.delete("/songs/{song_id}")
+def delete_song(song_id:int, db:Session = Depends(get_db), current_user : User = Depends(get_current_user)):
+    if current_user.role != "Admin": #type: ignore
+        raise HTTPException(status_code=403, detail="Not authorized to delete this song")
+    
+    db_song = db.query(Song).filter(Song.id == song_id).first()
+    if not db_song:
+        raise HTTPException(status_code=404, detail="Song doesn't exist")
+    db.delete(db_song)
+    db.commit()
+    return {"message":"Song deleted"}
