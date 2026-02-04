@@ -133,7 +133,19 @@ class PlaylistResponse(BaseModel):
     class Config:
         from_attributes = True
 
+#~~~~~~Review~~~~~
+class ReviewCreate(BaseModel):
+    rating:int
+    comment:str
 
+class ReviewResponse(BaseModel):
+    id:int
+    rating:int
+    comment:str
+    user_id:int
+    song_id:int
+    class Config:
+        from_attributes = True
 def get_db():
     db=SessionLocal()
     try: 
@@ -379,3 +391,40 @@ def delete_playlist(playlist_id:int, db:Session = Depends(get_db), current_user 
     db.delete(playlist)
     db.commit()
     return {"message":"Playlist deleted"}
+
+#REVIEW endpoints~~~~
+@app.post("/songs/{song_id}/reviews", response_model=ReviewResponse)
+def create_review(song_id:int,review:ReviewCreate,db:Session = Depends(get_db), current_user : User = Depends(get_current_user)):
+    exist_song =  db.query(Song).filter(Song.id == song_id).first()
+    if not exist_song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    #validations
+    exist_review = db.query(Review).filter(Review.user_id == current_user.id, Review.song_id == exist_song.id).first()
+    if exist_review:
+        raise HTTPException(status_code=400, detail="YOu have already written a review for this song")
+    if review.rating <1 or review.rating>5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    #create new review
+    new_review = Review (
+        user_id = current_user.id,
+        song_id = exist_song.id,
+        rating = review.rating,
+        comment = review.comment
+    )
+    db.add(new_review)
+    db.commit()
+    db.refresh(new_review)
+    return new_review
+
+#Recommendations
+"""
+@app.get("/songs//reviews/me}") 
+def get_recommendations (current_user:  User = Depends(get_current_user), db:Session=Depends(get_db)):
+    get_top_rated = db.query(Review).filter(Review.user_id == current_user.id, Review.rating >=4)
+    fav_genres = []
+    for review in get_top_rated:
+        fav_genres[review] = review.song.genre
+    #counter?
+    get_all_reviews = db.query(Review).filter(Review.user_id == current_user.id)
+    reviewed = [song for song in get_all_reviews]
+    """
