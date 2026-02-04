@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, Date, Table, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Date, Table, ForeignKey, func, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from typing import Optional, List
 import hashlib
 from sqlalchemy.orm import relationship
 import datetime
+from collections import Counter
 
 
 app = FastAPI(title="TuneCheck DB")
@@ -417,14 +418,33 @@ def create_review(song_id:int,review:ReviewCreate,db:Session = Depends(get_db), 
     return new_review
 
 #Recommendations
-"""
-@app.get("/songs//reviews/me}") 
+
+@app.get("/recommendations", response_model=List[SongResponse]) 
 def get_recommendations (current_user:  User = Depends(get_current_user), db:Session=Depends(get_db)):
-    get_top_rated = db.query(Review).filter(Review.user_id == current_user.id, Review.rating >=4)
-    fav_genres = []
-    for review in get_top_rated:
-        fav_genres[review] = review.song.genre
-    #counter?
-    get_all_reviews = db.query(Review).filter(Review.user_id == current_user.id)
-    reviewed = [song for song in get_all_reviews]
-    """
+    get_top_rated = db.query(Review).filter(Review.user_id == current_user.id, Review.rating >=4).all()
+    
+    recommended_songs = []
+
+    if get_top_rated:
+        genres = [review.song.genre for review in get_top_rated]
+        if genres:
+            most_common_genre = Counter(genres).most_common(1)[0][0]
+            get_all_reviews = db.query(Review).filter(Review.user_id == current_user.id).all()
+            rated_songs = [rev.song_id for rev in get_all_reviews]
+
+            recommended_songs = db.query(Song).filter(Song.genre == most_common_genre, 
+                                                      Song.id.notin_(rated_songs)
+                                                      ).limit(3).all()
+    if not recommended_songs:
+        top_hits = (db.query(Review.song_id)
+                    .group_by(Review.song_id)
+                    .order_by(desc(func.avg(Review.rating)))
+                    .limit(3).all())
+        if top_hits:
+            top_ids = [id for (id,) in top_hits]
+
+            recommended_songs=db.query(Song).filter(Song.id.in_(top_ids)).all()
+        else:
+            recommended_songs = db.query(Song).limit(3).all()
+
+    return recommended_songs
