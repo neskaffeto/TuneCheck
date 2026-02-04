@@ -6,6 +6,9 @@ from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 from typing import Optional, List
 import hashlib
+from sqlalchemy.orm import relationship
+import datetime
+
 
 app = FastAPI(title="TuneCheck DB")
 
@@ -22,6 +25,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
 #DB models
 #row in a table
+#USER
 class User(Base):
     __tablename__ = "users"
 
@@ -29,6 +33,32 @@ class User(Base):
     username=Column(String(100), nullable=False, unique=True)
     password_hash=Column(String(100))
     role=Column(String(100), default="User")
+
+#SONG
+class Song(Base):
+    __tablename__ = "songs"
+
+    id=Column(Integer,primary_key=True,index=True)
+    title=Column(String(100), nullable=False)
+    album=Column(String(100))
+    genre=Column(String(100))
+    singer=Column(String(100), nullable=False)
+    length=Column(Integer) #in minutes
+    date_of_publication = Column(Date)
+    
+    reviews = relationship("Review", back_populates = "song")
+
+#REVIEW
+class Review(Base):
+    __tablename__ = "reviews"
+
+    id=Column(Integer,primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    song_id = Column(Integer, ForeignKey("songs.id"))
+    rating = Column(Integer, nullable=False)
+    comment = Column(String(500))
+
+    song = relationship("Song", back_populates="reviews")
 
 Base.metadata.create_all(bind = engine)
 
@@ -41,12 +71,27 @@ class UserCreate(UserBase):
     password:str
     role: str = "User"
 
-#fastapi works on model responses
+class SongCreate(BaseModel):
+    title:str
+    album:str
+    genre:str
+    singer:str
+    length:int
+    date_of_publication: datetime.date
 
 class UserResponse(UserBase):
     #safety net
     id:int
     role:str
+    class Config:
+        from_attributes = True
+
+class SongResponse(BaseModel):
+    #safety net
+    id:int
+    title:str
+    singer:str
+    album:str
     class Config:
         from_attributes = True
 
@@ -72,6 +117,8 @@ def get_admin_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 #------ENDPOINTS----
+
+#User Endpoints
 @app.get("/")
 def root():
     return {"message":"TuneCheck Web App"}
@@ -145,3 +192,34 @@ def read_users_me(current_user: User = Depends(get_current_user)):
 @app.get("/users/", response_model=List[UserResponse])
 def get_all_users(db:Session=Depends(get_db)):
     return db.query(User).all()
+
+#Song Endpoints
+#get song from DB
+@app.get("/songs/{song_id}") #check if song is in the DB
+def get_song(song_id:int, db:Session=Depends(get_db)):
+    song = db.query(Song).filter(Song.id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    return song
+
+@app.post("/songs") #add song to the DB
+def add_song(song:SongCreate, db:Session=Depends(get_db), current_user: User=Depends(get_current_user)):
+    if current_user.role != "Admin": #type: ignore
+        raise HTTPException(status_code=403, detail="You don't have rights to add new songs" )
+    exist_song =  db.query(Song).filter(Song.title == song.title, Song.singer == song.singer, Song.album == song.album).first()
+    if exist_song:
+        raise HTTPException(status_code=400, detail="This song is already added")
+    #create new song
+    new_song = Song (
+        title = song.title,
+        album = song.album,
+        genre= song.genre,
+        singer= song.singer,
+        length= song.length,
+        date_of_publication = song.date_of_publication 
+    )
+    db.add(new_song)
+    db.commit()
+    db.refresh(new_song)
+    return new_song
+
