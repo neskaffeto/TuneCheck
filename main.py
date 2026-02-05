@@ -13,6 +13,18 @@ import pydantic_models
 
 app = FastAPI(title="TuneCheck DB")
 
+origins = [
+    "http://localhost",
+    "http://127.0.0.1:5500",
+    "*"
+]
+
+app.add_middleware(CORSMiddleware,
+                   allow_origins=origins,
+                   allow_credentials = True,
+                   allow_methods=["*"],
+                   allow_headers=["*"])
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
 models.Base.metadata.create_all(bind = engine)
