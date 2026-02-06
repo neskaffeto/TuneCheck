@@ -30,10 +30,7 @@ def fixture_db_session():
 @pytest.fixture(name="client")
 def fixture_client(db_session):
     def override_getdb():
-        try:
-            yield db_session
-        finally:
-            db_session.close()
+        yield db_session
     app.dependency_overrides[get_db]=override_getdb
     with TestClient(app) as client:
         yield client
@@ -49,7 +46,7 @@ def user_token(client):
 
     response = client.post("/token", data={"username": username, "password": password})
     token = response.json()["access_token"]
-    return {"Authorisation":f"Bearer {token}"}
+    return {"Authorization":f"Bearer {token}"}
 
 @pytest.fixture
 def admin_token(client):
@@ -61,7 +58,7 @@ def admin_token(client):
 
     response = client.post("/token", data={"username": username, "password": password})
     token = response.json()["access_token"]
-    return {"Authorisation":f"Bearer {token}"}
+    return {"Authorization":f"Bearer {token}"}
     
 #helpers
 
@@ -87,7 +84,7 @@ def test_registre_user(client):
     response = client.post(
         "/register",
         json={"username": "nessa", "password": "neznammanqk", "role":"User"})
-    assert response.status.code==200
+    assert response.status_code==200
     data = response.json()
     assert data["username"]=="nessa"
     assert "id" in data
@@ -108,7 +105,7 @@ def test_dup_fail(client):
     assert response.status_code == 400
 
 def test_get_usersme(client, user_token):
-    response = client.get("users/me", headers = user_token)
+    response = client.get("/users/me", headers = user_token)
     assert response.status_code == 200
     assert response.json()["username"] == "nesi"
 
@@ -123,7 +120,7 @@ def test_update(client, user_token):
 
     #passwd change
     response = client.put(
-        f"/user{user_id}", json={"username": "nesi", "password": "paparola1"},
+        f"/user/{user_id}", json={"username": "nesi", "password": "paparola1"},
         headers = user_token
     )
     assert response.status_code == 200
@@ -133,13 +130,13 @@ def test_update(client, user_token):
     assert login_test.status_code == 200
 
 def test_delete_user(client):
-    client.post("/token", data={"username": "bokluk", "password": "mahaise", "role":"User"})
+    client.post("/register", json={"username": "bokluk", "password": "mahaise", "role":"User"})
     token_use = client.post("/token", data={"username": "bokluk", "password": "mahaise"})
     token = token_use.json()["access_token"]
     headers={"Authorization":f"bearer {token}"}
 
     cl= client.get("/users/me", headers=headers).json()
-    response = client.delete(f"user/{cl["id"]}", headers = headers)
+    response = client.delete(f"/user/{cl["id"]}", headers = headers)
     assert response.status_code == 200
     assert "deleted" in response.json()["message"]
 
@@ -202,7 +199,7 @@ def test_delete_song(client, admin_token):
                         "album": "nothing", "genre" : "techno",
                         "length" : 1, "date_of_publication" : "2000-01-08"},
                         headers = admin_token).json()
-    res = client.delete(f"/songs.{song["id"]}", headers= admin_token)
+    res = client.delete(f"/songs/{song["id"]}", headers= admin_token)
     assert res.status_code == 200
 
     check = client.get(f"/songs/{song["id"]}")
@@ -240,7 +237,7 @@ def test_add_song_to_playlist(client, user_token, admin_token):
         headers=user_token
     )
     assert response.status_code == 200
-    assert "Added" in response.json()["message"]
+    assert "added" in response.json()["message"]
 
 def test_update_playlist(client, user_token):
     pl = client.post("/playlists", json={"name": "Old Pl"}, headers=user_token).json()
