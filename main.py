@@ -50,6 +50,14 @@ def get_admin_user(current_user: models.User = Depends(get_current_user)):
 def root():
     return {"message":"TuneCheck Web App"}
 
+@app.get("/users/me", response_model=pydantic_models.UserResponse)
+def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return current_user
+#get all users
+@app.get("/users/", response_model=List[pydantic_models.UserResponse])
+def get_all_users(db:Session=Depends(get_db)):
+    return db.query(models.User).all()
+
 @app.get("/users/{user_id}", response_model=pydantic_models.UserResponse)
 def get_user(user_id:int, db:Session=Depends(get_db)):
     user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -112,15 +120,13 @@ def delete_user(user_id:int, db:Session = Depends(get_db), current_user : models
     db.commit()
     return {"message":"User deleted"}
 
-@app.get("/users/me", response_model=pydantic_models.UserResponse)
-def read_users_me(current_user: models.User = Depends(get_current_user)):
-    return current_user
-#get all users
-@app.get("/users/", response_model=List[pydantic_models.UserResponse])
-def get_all_users(db:Session=Depends(get_db)):
-    return db.query(models.User).all()
+
 
 #Song Endpoints~~~~~~~~~~~
+
+@app.get("/songs", response_model=List[pydantic_models.SongResponse])
+def get_all_songs(db:Session=Depends(get_db)):
+    return db.query(models.Song).all()
 #get song from DB
 @app.get("/songs/{song_id}") #check if song is in the DB
 def get_song(song_id:int, db:Session=Depends(get_db)):
