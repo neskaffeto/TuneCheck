@@ -1,6 +1,6 @@
 #DB models
 #row in a table
-#USER
+
 from sqlalchemy import Column, Integer, String, Date, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from db import Base
@@ -10,7 +10,7 @@ playlist_songs = Table(
     Column('playlist_id', Integer, ForeignKey('playlists.id')),
     Column('song_id', Integer, ForeignKey('songs.id'))
 )
-
+#USER
 class User(Base):
     __tablename__ = "users"
 
