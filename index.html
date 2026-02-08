@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TuneCheck Music App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <style>
+        body { background-color: #f8f9fa; }
+        .song-card { transition: transform 0.2s; cursor: pointer; }
+        .song-card:hover { transform: translateY(-5px); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .playlist-badge { font-size: 0.8em; margin-right: 5px; }
+        .hidden { display: none !important; }
+        #loading-spinner { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9999; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-spinner" class="spinner-border text-primary hidden" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+
+    <div class="container mt-5" id="auth-section">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-4">
+                <div class="card shadow-lg border-0 rounded-3">
+                    <div class="card-body p-4">
+                        <h3 class="text-center mb-4 text-primary fw-bold"><i class="fas fa-music"></i> TuneCheck</h3>
+                        
+                        <ul class="nav nav-pills nav-fill mb-3" id="authTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="login-tab" data-bs-toggle="pill" data-bs-target="#login-pane" type="button">Login</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="register-tab" data-bs-toggle="pill" data-bs-target="#register-pane" type="button">Register</button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content">
+                            <div class="tab-pane fade show active" id="login-pane">
+                                <form onsubmit="handleLogin(event)">
+                                    <div class="mb-3">
+                                        <label class="form-label">Username</label>
+                                        <input type="text" id="login-username" class="form-control" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Password</label>
+                                        <input type="password" id="login-password" class="form-control" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">Sign In</button>
+                                </form>
+                                <div class="text-center mt-3">
+                                <span class="text-muted">or</span>
+                            </div>
+                            <button onclick="continueAsGuest()" class="btn btn-outline-secondary w-100 mt-2">
+                                <i class="fas fa-user-secret"></i> Continue as Guest
+                            </button>
+                            </div>
+                            <div class="tab-pane fade" id="register-pane">
+                                <form onsubmit="handleRegister(event)">
+                                    <div class="mb-3">
+                                        <label class="form-label">Username</label>
+                                        <input type="text" id="reg-username" class="form-control" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Password</label>
+                                        <input type="password" id="reg-password" class="form-control" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-success w-100">Create Account</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div id="auth-alert" class="alert alert-danger mt-3 hidden text-center"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboard-section" class="hidden">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="#"><i class="fas fa-music"></i> TuneCheck</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item auth-only"><a class="nav-link active" href="#" onclick="showSection('recommendations')">For You</a></li>
+                <li class="nav-item"><a class="nav-link" href="#" onclick="showSection('all-songs')">Library</a></li>
+                <li class="nav-item auth-only"><a class="nav-link" href="#" onclick="showSection('playlists')">My Playlists</a></li>
+            </ul>
+            
+            <span class="navbar-text text-white me-3" id="user-display"></span>
+            
+            <button id="btn-logout" class="btn btn-outline-light btn-sm auth-only" onclick="logout()">Logout</button>
+            
+            <button id="btn-login" class="btn btn-light btn-sm hidden guest-only" onclick="logout()">Login</button>
+        </div>
+    </div>
+</nav>
+        <div class="container mt-4">
+            
+            <div id="view-recommendations">
+                <h2 class="mb-3">🎵 Recommended for You</h2>
+                <div class="row" id="rec-container">
+                    </div>
+            </div>
+
+            <div id="view-all-songs" class="hidden">
+                <h2 class="mb-3">📚 Music Library</h2>
+                <div class="input-group mb-3">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" id="search-bar" placeholder="Search songs..." onkeyup="filterSongs()">
+                </div>
+                <div class="row" id="library-container">
+                    </div>
+            </div>
+
+            <div id="view-playlists" class="hidden">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🎧 My Playlists</h2>
+                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#createPlaylistModal">
+                        <i class="fas fa-plus"></i> New Playlist
+                    </button>
+                </div>
+                <div class="accordion" id="playlists-accordion">
+                    </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="modal fade" id="createPlaylistModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Playlist</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="new-playlist-name" class="form-control" placeholder="Playlist Name (e.g., Gym Hits)">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="createPlaylist()">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="addToPlaylistModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Song to Playlist</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Select a playlist for: <strong id="modal-song-title"></strong></p>
+                    <select id="playlist-select" class="form-select">
+                        </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="confirmAddToPlaylist()">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="reviewModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Write a Review</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Reviewing: <strong id="review-song-title"></strong></p>
+                    <div class="mb-3">
+                        <label class="form-label">Rating</label>
+                        <select id="review-rating" class="form-select">
+                            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                            <option value="4">⭐⭐⭐⭐ (4)</option>
+                            <option value="3">⭐⭐⭐ (3)</option>
+                            <option value="2">⭐⭐ (2)</option>
+                            <option value="1">⭐ (1)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Comment</label>
+                        <textarea id="review-comment" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="submitReview()">Submit Review</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let token = localStorage.getItem("access_token");
+        let myPlaylists = [];
+        let allSongs = [];
+        let selectedSongId = null;
+        let isGuest = false;
+        // --- AUTH LOGIC ---
+
+        if (token) {
+            initDashboard();
+        } else {
+            // Ако няма токен, просто чакаме потребителя да избере (Login или Guest)
+        }
+
+        function continueAsGuest() {
+            isGuest = true;
+            token = null; // Уверяваме се, че няма стар токен
+            initDashboard();
+        }
+        async function handleLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById("login-username").value;
+            const pass = document.getElementById("login-password").value;
+            const formData = new URLSearchParams();
+            formData.append("username", user);
+            formData.append("password", pass);
+
+            try {
+                const res = await axios.post(`${API_URL}/token`, formData);
+                token = res.data.access_token;
+                localStorage.setItem("access_token", token);
+                initDashboard();
+            } catch (err) {
+                showAuthError("Invalid username or password");
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const user = document.getElementById("reg-username").value;
+            const pass = document.getElementById("reg-password").value;
+            
+            try {
+                await axios.post(`${API_URL}/register`, {
+                    username: user, password: pass, role: "User"
+                });
+                alert("Registration successful! Please login.");
+                document.getElementById("login-tab").click(); // Switch to login tab
+            } catch (err) {
+                showAuthError("Registration failed. Username might be taken.");
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem("access_token");
+            location.reload();
+        }
+
+        function showAuthError(msg) {
+            const alert = document.getElementById("auth-alert");
+            alert.innerText = msg;
+            alert.classList.remove("hidden");
+        }
+
+        // --- DASHBOARD LOGIC ---
+
+        async function initDashboard() {
+    document.getElementById("auth-section").classList.add("hidden");
+    document.getElementById("dashboard-section").classList.remove("hidden");
+
+    // Настройка на UI спрямо ролята
+    if (isGuest) {
+        document.getElementById("user-display").innerText = "Guest Mode";
+        document.querySelectorAll(".auth-only").forEach(el => el.classList.add("hidden"));
+        document.querySelectorAll(".guest-only").forEach(el => el.classList.remove("hidden"));
+        
+        // Гостите виждат директно библиотеката
+        showSection('all-songs'); 
+        await loadAllSongs();
+    } else {
+        // Логика за логнат потребител (старата)
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        document.querySelectorAll(".auth-only").forEach(el => el.classList.remove("hidden"));
+        document.querySelectorAll(".guest-only").forEach(el => el.classList.add("hidden"));
+
+        try {
+            const userRes = await axios.get(`${API_URL}/users/me`);
+            document.getElementById("user-display").innerText = `Hello, ${userRes.data.username}`;
+            
+            await Promise.all([
+                loadRecommendations(),
+                loadAllSongs(),
+                loadPlaylists()
+            ]);
+        } catch (err) {
+            console.error(err);
+            if(err.response && err.response.status === 401) logout();
+        }
+    }
+}
+
+        
+
+        async function loadRecommendations() {
+            try {
+                const res = await axios.get(`${API_URL}/recommendations`);
+                renderSongs(res.data, "rec-container");
+            } catch (err) { console.error("Recs error", err); }
+        }
+
+        async function loadAllSongs() {
+            try {
+                const res = await axios.get(`${API_URL}/songs`);
+                allSongs = res.data;
+                renderSongs(allSongs, "library-container");
+            } catch (err) { console.error("Library error", err); }
+        }
+
+        async function loadPlaylists() {
+            try {
+                const res = await axios.get(`${API_URL}/playlists/me`);
+                myPlaylists = res.data;
+                renderPlaylists(myPlaylists);
+            } catch (err) { console.error("Playlist error", err); }
+        }
+
+        // --- RENDERING ---
+
+        function renderSongs(songs, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = "";
+            
+            if (songs.length === 0) {
+                container.innerHTML = "<p class='text-muted'>No songs found.</p>";
+                return;
+            }
+
+            songs.forEach(song => {
+
+                const btnAction = isGuest ? `onclick="alert('Please login to use this feature!')"` : "";
+                
+                const reviewAction = isGuest ? "alert('Please login to review!')" : `openReviewModal(${song.id}, '${song.title}')`;
+                const addAction = isGuest ? "alert('Please login to create playlists!')" : `openAddToPlaylistModal(${song.id}, '${song.title}')`;
+                const col = document.createElement("div");
+                col.className = "col-md-6 col-lg-4 mb-4";
+                col.innerHTML = `
+                    <div class="card song-card h-100 border-0 shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold text-primary">${song.title}</h5>
+                            <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-microphone"></i> ${song.singer}</h6>
+                            <p class="card-text small">
+                                <span class="badge bg-secondary">${song.genre}</span>
+                                <span class="badge bg-info text-dark">${song.album}</span>
+                            </p>
+                        </div>
+                        <div class="card-footer bg-white border-0 d-flex justify-content-between">
+                            <button class="btn btn-outline-primary btn-sm" onclick="openReviewModal(${song.id}, '${song.title}')">
+                                <i class="fas fa-star"></i> Review
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="openAddToPlaylistModal(${song.id}, '${song.title}')">
+                                <i class="fas fa-plus"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(col);
+            });
+        }
+
+        function renderPlaylists(playlists) {
+            const container = document.getElementById("playlists-accordion");
+            container.innerHTML = "";
+
+            playlists.forEach((pl, index) => {
+                const songsList = pl.songs.map(s => `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        ${s.title} - ${s.singer}
+                        <span class="badge bg-primary rounded-pill">${s.genre}</span>
+                    </li>
+                `).join("");
+
+                const item = document.createElement("div");
+                item.className = "accordion-item";
+                item.innerHTML = `
+                    <h2 class="accordion-header" id="heading${index}">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                            ${pl.name} <span class="badge bg-secondary ms-2">${pl.songs.length} songs</span>
+                        </button>
+                    </h2>
+                    <div id="collapse${index}" class="accordion-collapse collapse" data-bs-parent="#playlists-accordion">
+                        <div class="accordion-body">
+                            ${pl.songs.length ? `<ul class="list-group list-group-flush">${songsList}</ul>` : '<p class="text-muted">Empty playlist.</p>'}
+                            <div class="mt-3 text-end">
+                                <button class="btn btn-danger btn-sm" onclick="deletePlaylist(${pl.id})"><i class="fas fa-trash"></i> Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // --- ACTIONS ---
+
+        function openAddToPlaylistModal(songId, songTitle) {
+            selectedSongId = songId;
+            document.getElementById("modal-song-title").innerText = songTitle;
+            
+            const select = document.getElementById("playlist-select");
+            select.innerHTML = "";
+            myPlaylists.forEach(pl => {
+                const opt = document.createElement("option");
+                opt.value = pl.id;
+                opt.innerText = pl.name;
+                select.appendChild(opt);
+            });
+
+            new bootstrap.Modal(document.getElementById('addToPlaylistModal')).show();
+        }
+
+        async function confirmAddToPlaylist() {
+            const playlistId = document.getElementById("playlist-select").value;
+            if (!playlistId) return alert("Please create a playlist first!");
+
+            try {
+                await axios.post(`${API_URL}/playlists/${playlistId}/add/${selectedSongId}`);
+                alert("Song added!");
+                bootstrap.Modal.getInstance(document.getElementById('addToPlaylistModal')).hide();
+                loadPlaylists(); // Refresh
+            } catch (err) {
+                alert("Error: Song might already be in playlist.");
+            }
+        }
+
+        async function createPlaylist() {
+            const name = document.getElementById("new-playlist-name").value;
+            if (!name) return;
+            try {
+                await axios.post(`${API_URL}/playlists`, { name: name });
+                document.getElementById("new-playlist-name").value = "";
+                bootstrap.Modal.getInstance(document.getElementById('createPlaylistModal')).hide();
+                loadPlaylists();
+            } catch (err) { alert("Error creating playlist"); }
+        }
+
+        async function deletePlaylist(id) {
+            if(!confirm("Are you sure?")) return;
+            try {
+                await axios.delete(`${API_URL}/playlists/${id}`);
+                loadPlaylists();
+            } catch (err) { alert("Error deleting playlist"); }
+        }
+
+        function openReviewModal(songId, songTitle) {
+            selectedSongId = songId;
+            document.getElementById("review-song-title").innerText = songTitle;
+            new bootstrap.Modal(document.getElementById('reviewModal')).show();
+        }
+
+        async function submitReview() {
+            const rating = document.getElementById("review-rating").value;
+            const comment = document.getElementById("review-comment").value;
+            
+            try {
+                await axios.post(`${API_URL}/songs/${selectedSongId}/reviews`, {
+                    rating: parseInt(rating),
+                    comment: comment
+                });
+                alert("Review submitted!");
+                bootstrap.Modal.getInstance(document.getElementById('reviewModal')).hide();
+                loadRecommendations(); // Refresh recs based on new rating
+            } catch (err) {
+                alert(err.response.data.detail || "Error submitting review");
+            }
+        }
+
+        // --- UI HELPERS ---
+
+        function showSection(sectionId) {
+            document.getElementById("view-recommendations").classList.add("hidden");
+            document.getElementById("view-all-songs").classList.add("hidden");
+            document.getElementById("view-playlists").classList.add("hidden");
+            
+            document.getElementById(`view-${sectionId}`).classList.remove("hidden");
+            
+            // Highlight active tab
+            document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
+            event.target.classList.add("active");
+        }
+
+        function filterSongs() {
+            const term = document.getElementById("search-bar").value.toLowerCase();
+            const filtered = allSongs.filter(s => 
+                s.title.toLowerCase().includes(term) || 
+                s.singer.toLowerCase().includes(term)
+            );
+            renderSongs(filtered, "library-container");
+        }
+    </script>
+</body>
+</html>
